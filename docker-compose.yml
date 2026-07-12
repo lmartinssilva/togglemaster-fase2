@@ -1,0 +1,141 @@
+services:
+
+  # --- Bancos de Dados ---
+  auth-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: auth_db
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+      - ./auth-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d auth_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  flag-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: flags_db
+    volumes:
+      - flag_db_data:/var/lib/postgresql/data
+      - ./flag-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d flags_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  targeting-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: targeting_db
+    volumes:
+      - targeting_db_data:/var/lib/postgresql/data
+      - ./targeting-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d targeting_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    ports:
+      - "8000:8000"
+
+  # --- Microsserviços ---
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgres://user:password@auth-db:5432/auth_db
+      PORT: "8001"
+      MASTER_KEY: "admin-secreto-123"
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+  flag-service:
+    build: ./flag-service
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgres://user:password@flag-db:5432/flags_db
+      PORT: "8002"
+      AUTH_SERVICE_URL: http://auth-service:8001
+    depends_on:
+      flag-db:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+
+  targeting-service:
+    build: ./targeting-service
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgres://user:password@targeting-db:5432/targeting_db
+      PORT: "8003"
+      AUTH_SERVICE_URL: http://auth-service:8001
+    depends_on:
+      targeting-db:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+
+  evaluation-service:
+    build: ./evaluation-service
+    ports:
+      - "8004:8004"
+    environment:
+      PORT: "8004"
+      REDIS_URL: redis://redis:6379
+      FLAG_SERVICE_URL: http://flag-service:8002
+      TARGETING_SERVICE_URL: http://targeting-service:8003
+      SERVICE_API_KEY: "placeholder"
+      AWS_SQS_URL: ""
+      AWS_REGION: "us-east-1"
+    depends_on:
+      redis:
+        condition: service_healthy
+      flag-service:
+        condition: service_started
+      targeting-service:
+        condition: service_started
+
+  analytics-service:
+    build: ./analytics-service
+    ports:
+      - "8005:8005"
+    environment:
+      PORT: "8005"
+      AWS_SQS_URL: "http://dynamodb-local:8000"
+      AWS_DYNAMODB_TABLE: "ToggleMasterAnalytics"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "fake"
+      AWS_SECRET_ACCESS_KEY: "fake"
+    depends_on:
+      - dynamodb-local
+
+volumes:
+  auth_db_data:
+  flag_db_data:
+  targeting_db_data:

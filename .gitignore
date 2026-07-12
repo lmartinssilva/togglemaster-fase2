@@ -1,0 +1,37 @@
+# Segredos e credenciais - NUNCA versionar
+k8s/secrets.yaml
+*.env
+.env
+.env.*
+aws-creds.sh
+*credentials*
+
+# Dependências
+node_modules/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Build/binários Go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Docker
+*.log
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vídeos e arquivos temporários da gravação (não fazem parte do código)
+*.mp4
+*.mkv
+lista.txt
