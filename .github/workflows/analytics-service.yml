@@ -74,7 +74,7 @@ jobs:
         working-directory: ${{ env.SERVICE_DIR }}
         run: |
           pip install bandit
-          bandit -r . -ll -x ./venv
+          bandit -r . -lll -x ./venv
 
       - name: SCA - Trivy filesystem scan (busca vulnerabilidades em dependências)
         uses: aquasecurity/trivy-action@master
