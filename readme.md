@@ -13,7 +13,7 @@ Evolução do MVP monolítico da Fase 1 para uma arquitetura de **microsserviço
 distribuídos**, conteinerizada e implantada em **Kubernetes na AWS (EKS)**,
 com autoscaling horizontal.
 
-> 🎥 **Vídeo de demonstração:** _[link a preencher]_
+> 🎥 **Vídeo de demonstração:** https://drive.google.com/file/d/15648p1NvNTdh0k1oWU4Z5WCnY5mB5kIt/view?usp=drive_link
 > 📄 **Relatório de entrega completo:** [`relatorio_entrega_fase2.pdf`](./relatorio_entrega_fase2.pdf)
 
 ---
@@ -34,7 +34,7 @@ com autoscaling horizontal.
 
 | Nome | RM | Discord |
 |---|---|---|
-| Leonardo Martins Silva | 371437 | _[preencher]_ |
+| Leonardo Martins Silva | 371437 | lmartinssilva |
 
 ---
 
