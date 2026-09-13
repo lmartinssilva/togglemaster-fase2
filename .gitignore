@@ -35,3 +35,6 @@ Thumbs.db
 *.mp4
 *.mkv
 lista.txt
+# Binários compilados do Go (build local)
+auth-service/auth-service
+evaluation-service/evaluation-service

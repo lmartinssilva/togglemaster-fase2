@@ -110,8 +110,7 @@ def create_rule():
         if conn:
             conn.rollback()
         log.warning(f"Tentativa de criar regra duplicada: '{flag_name}'")
-        return jsonify({"error": f"Regra para a flag '{
-                       flag_name}' já existe"}), 409
+        return jsonify({"error": f"Regra para a flag '{flag_name}' já existe"}), 409
     except Exception as e:
         if conn:
             conn.rollback()

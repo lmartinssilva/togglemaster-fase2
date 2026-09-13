@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
-	"os"
 )
 
 const (
@@ -46,7 +46,7 @@ func (a *App) getCombinedFlagInfo(flagName string) (*CombinedFlagInfo, error) {
 		// Se o unmarshal falhar, trata como cache miss
 		log.Printf("Erro ao desserializar cache para flag '%s': %v", flagName, err)
 	}
-	
+
 	log.Printf("Cache MISS para flag '%s'", flagName)
 	// 2. Cache MISS - Buscar dos serviços
 	info, err := a.fetchFromServices(flagName)
@@ -57,7 +57,9 @@ func (a *App) getCombinedFlagInfo(flagName string) (*CombinedFlagInfo, error) {
 	// 3. Salvar no Cache
 	jsonData, err := json.Marshal(info)
 	if err == nil {
-		a.RedisClient.Set(ctx, cacheKey, jsonData, CACHE_TTL).Err()
+		if err := a.RedisClient.Set(ctx, cacheKey, jsonData, CACHE_TTL).Err(); err != nil {
+			log.Printf("Erro ao salvar cache para flag '%s': %v", flagName, err)
+		}
 	}
 
 	return info, nil
@@ -106,7 +108,7 @@ func (a *App) fetchFlag(flagName string) (*Flag, error) {
 	apiKey := os.Getenv("SERVICE_API_KEY")
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	
+
 	resp, err := a.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao chamar flag-service: %w", err)
@@ -120,7 +122,7 @@ func (a *App) fetchFlag(flagName string) (*Flag, error) {
 		return nil, fmt.Errorf("flag-service retornou status %d", resp.StatusCode)
 	}
 
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	var flag Flag
 	if err := json.Unmarshal(body, &flag); err != nil {
 		return nil, fmt.Errorf("erro ao desserializar resposta do flag-service: %w", err)
@@ -133,7 +135,7 @@ func (a *App) fetchRule(flagName string) (*TargetingRule, error) {
 	apiKey := os.Getenv("SERVICE_API_KEY") // Usa a mesma chave
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	
+
 	resp, err := a.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao chamar targeting-service: %w", err)
@@ -147,7 +149,7 @@ func (a *App) fetchRule(flagName string) (*TargetingRule, error) {
 		return nil, fmt.Errorf("targeting-service retornou status %d", resp.StatusCode)
 	}
 
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	var rule TargetingRule
 	if err := json.Unmarshal(body, &rule); err != nil {
 		return nil, fmt.Errorf("erro ao desserializar resposta do targeting-service: %w", err)
@@ -174,10 +176,10 @@ func (a *App) runEvaluationLogic(info *CombinedFlagInfo, userID string) bool {
 			log.Printf("Erro: valor da regra de porcentagem não é um número para a flag '%s'", info.Flag.Name)
 			return false
 		}
-		
+
 		// Calcula o "bucket" do usuário (0-99)
 		userBucket := getDeterministicBucket(userID + info.Flag.Name)
-		
+
 		if float64(userBucket) < percentage {
 			return true
 		}
@@ -191,10 +193,10 @@ func getDeterministicBucket(input string) int {
 	hasher := sha1.New()
 	hasher.Write([]byte(input))
 	hash := hasher.Sum(nil)
-	
+
 	// Converte 4 bytes para um uint32
 	val := binary.BigEndian.Uint32(hash[:4])
-	
+
 	// Retorna o módulo 100
 	return int(val % 100)
 }
