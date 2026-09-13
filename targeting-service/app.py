@@ -53,8 +53,7 @@ def require_auth(f):
 
             if response.status_code != 200:
                 log.warning(
-                    f"Falha na validação da chave (status: {
-                        response.status_code})")
+                    f"Falha na validação da chave (status: {response.status_code})")
                 return jsonify({"error": "Chave de API inválida"}), 401
 
         except requests.exceptions.Timeout:
@@ -176,8 +175,7 @@ def update_rule(flag_name):
 
     values.append(flag_name)  # Adiciona o 'flag_name' para a cláusula WHERE
 
-    query = f"UPDATE targeting_rules SET {
-        ', '.join(fields)} WHERE flag_name = %s RETURNING *"
+    query = f"UPDATE targeting_rules SET {', '.join(fields)} WHERE flag_name = %s RETURNING *"
 
     conn = None
     cur = None
