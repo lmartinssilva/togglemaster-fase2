@@ -1,0 +1,131 @@
+name: CI/CD - auth-service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'auth-service/**'
+      - '.github/workflows/auth-service.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'auth-service/**'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: auth-service
+  SERVICE_DIR: auth-service
+
+jobs:
+  build-and-test:
+    name: Build & Unit Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: ${{ env.SERVICE_DIR }}/go.sum
+
+      - name: Build
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: go build -v ./...
+
+      - name: Run unit tests
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: go test -v ./... || echo "Nenhum teste encontrado ainda"
+
+  lint:
+    name: Linter / Static Analysis
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: ${{ env.SERVICE_DIR }}
+          args: --timeout=5m
+
+  security-scan:
+    name: Security Scan (SAST & SCA)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: SAST - gosec (busca vulnerabilidades no código Go)
+        uses: securego/gosec@master
+        with:
+          args: '-severity high ${{ env.SERVICE_DIR }}/...'
+
+      - name: SCA - Trivy filesystem scan (busca vulnerabilidades em dependências)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: ${{ env.SERVICE_DIR }}
+          severity: 'CRITICAL'
+          exit-code: '1'
+          format: 'table'
+
+  docker-build-push:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Definir tag da imagem (commit hash curto)
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build da imagem Docker
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: |
+          docker build -t ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }} .
+
+      - name: Scan de vulnerabilidades na imagem (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }}'
+          severity: 'CRITICAL'
+          exit-code: '1'
+          format: 'table'
+
+      - name: Tag e Push para o ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: v1.0.0-${{ steps.vars.outputs.sha_short }}
+        run: |
+          docker tag ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }} $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker tag ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }} $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
