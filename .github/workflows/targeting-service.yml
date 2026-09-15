@@ -131,3 +131,14 @@ jobs:
           docker tag ${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha_short }} $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+
+      - name: Atualiza tag da imagem no repositório GitOps
+        run: |
+          git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/lmartinssilva/togglemaster-gitops.git gitops-repo
+          cd gitops-repo
+          sed -i "s#\(${{ env.ECR_REPOSITORY }}:\).*#\1${{ env.IMAGE_TAG }}#" manifests/deployments.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifests/deployments.yaml
+          git commit -m "chore: atualiza ${{ env.ECR_REPOSITORY }} para ${{ env.IMAGE_TAG }}" || echo "Nada para commitar"
+          git push
