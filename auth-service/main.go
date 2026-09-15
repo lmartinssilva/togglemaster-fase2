@@ -78,3 +78,4 @@ func connectDB(databaseURL string) (*sql.DB, error) {
 	log.Println("Conectado ao PostgreSQL com sucesso!")
 	return db, nil
 }// Pipeline CI/CD - Tech Challenge Fase 3
+// teste gitops sync seg 14 set 2026 21:06:23 -03
