@@ -19,7 +19,7 @@ env:
 jobs:
   build-and-test:
     name: Build & Unit Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +42,7 @@ jobs:
 
   lint:
     name: Linter / Static Analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-and-test
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
 
   security-scan:
     name: Security Scan (SAST & SCA)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +87,7 @@ jobs:
 
   docker-build-push:
     name: Docker Build & Push
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: security-scan
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
