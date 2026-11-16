@@ -7,6 +7,7 @@ from psycopg2.pool import SimpleConnectionPool
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from functools import wraps
+from otel_setup import init_otel
 import logging
 
 # Configura o logging
@@ -17,6 +18,7 @@ log = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
+init_otel(app)  # tracing distribuído (no-op se OTEL_EXPORTER_OTLP_ENDPOINT não existir)
 
 # --- Configuração ---
 DATABASE_URL = os.getenv("DATABASE_URL")

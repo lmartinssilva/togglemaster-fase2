@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/go-redis/redis/v8"
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Contexto global para o Redis
@@ -29,6 +30,8 @@ type App struct {
 
 func main() {
 	_ = godotenv.Load() // Carrega .env para dev local
+
+	shutdownTelemetry := initTelemetry("evaluation-service")
 
 	// --- Configuração ---
 	port := os.Getenv("PORT")
@@ -62,7 +65,7 @@ func main() {
 	}
 
 	// --- Inicializa Clientes ---
-	
+
 	// Cliente Redis
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
@@ -86,8 +89,11 @@ func main() {
 	}
 
 	// Cliente HTTP (com timeout)
+	// otelhttp.NewTransport cria um span CLIENT por chamada e injeta o header
+	// traceparent: é isso que liga o trace do evaluation ao flag/targeting-service.
 	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
 	// Cria a instância da App
@@ -106,7 +112,14 @@ func main() {
 	mux.HandleFunc("/evaluate", app.evaluationHandler)
 
 	log.Printf("Serviço de Avaliação (Go) rodando na porta %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           instrumentHandler(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	err = srv.ListenAndServe()
+	_ = shutdownTelemetry(context.Background())
+	if err != nil {
 		log.Fatal(err)
 	}
 }

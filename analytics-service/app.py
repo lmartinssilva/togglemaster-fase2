@@ -9,6 +9,13 @@ import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 from flask import Flask, jsonify
 from dotenv import load_dotenv
+from opentelemetry import trace, propagate
+from otel_setup import init_otel
+
+try:
+    from opentelemetry.instrumentation.utils import suppress_instrumentation
+except ImportError:  # pragma: no cover
+    from contextlib import nullcontext as suppress_instrumentation
 
 # Configura o logging
 logging.basicConfig(
@@ -47,6 +54,20 @@ except Exception as e:
 # --- SQS Worker ---
 
 def process_message(message):
+    """ Continua o trace iniciado no evaluation-service (traceparent vem nos
+    atributos da mensagem SQS) e processa a mensagem dentro de um span CONSUMER """
+    attrs = message.get('MessageAttributes', {}) or {}
+    carrier = {k: v.get('StringValue') for k, v in attrs.items() if v.get('StringValue')}
+    parent_ctx = propagate.extract(carrier)
+    tracer = trace.get_tracer("analytics-service")
+    with tracer.start_as_current_span(
+            "sqs.process evaluation-event",
+            context=parent_ctx,
+            kind=trace.SpanKind.CONSUMER):
+        _handle_message(message)
+
+
+def _handle_message(message):
     """ Processa uma única mensagem SQS e a insere no DynamoDB """
     try:
         log.info(f"Processando mensagem ID: {message['MessageId']}")
@@ -98,11 +119,14 @@ def sqs_worker_loop():
     while True:
         try:
             # Long-polling: espera até 20s por mensagens
-            response = sqs_client.receive_message(
-                QueueUrl=SQS_QUEUE_URL,
-                MaxNumberOfMessages=10,  # Processa em lotes de até 10
-                WaitTimeSeconds=20
-            )
+            # suppress_instrumentation: o long-polling de 20s não vira span (ruído)
+            with suppress_instrumentation():
+                response = sqs_client.receive_message(
+                    QueueUrl=SQS_QUEUE_URL,
+                    MaxNumberOfMessages=10,  # Processa em lotes de até 10
+                    WaitTimeSeconds=20,
+                    MessageAttributeNames=['All']  # traz o traceparent
+                )
 
             messages = response.get('Messages', [])
             if not messages:
@@ -125,6 +149,7 @@ def sqs_worker_loop():
 
 
 app = Flask(__name__)
+init_otel(app)
 
 
 @app.route('/health')

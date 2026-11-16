@@ -1,18 +1,26 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
 	"os"
-  _ "github.com/jackc/pgx/v4/stdlib"
+	"sync/atomic"
+	"time"
+
+	_ "github.com/jackc/pgx/v4/stdlib"
 	"github.com/joho/godotenv"
 )
 
 // App struct (para injeção de dependência)
 type App struct {
-	DB         *sql.DB
-	MasterKey  string
+	DB        *sql.DB
+	MasterKey string
+	// chaos: chave de "falha injetada" usada na demo da Fase 4. Enquanto ligada,
+	// /validate responde 500. Fica só em memória: reiniciar o pod (que é o que o
+	// self-healing faz) desliga a falha.
+	chaos atomic.Bool
 }
 
 func main() {
@@ -35,6 +43,8 @@ func main() {
 		log.Fatal("MASTER_KEY deve ser definida")
 	}
 
+	shutdownTelemetry := initTelemetry("auth-service")
+
 	// --- Conexão com o Banco ---
 	db, err := connectDB(databaseURL)
 	if err != nil {
@@ -43,8 +53,8 @@ func main() {
 	defer db.Close()
 
 	app := &App{
-		DB:         db,
-		MasterKey:  masterKey,
+		DB:        db,
+		MasterKey: masterKey,
 	}
 
 	// --- Rotas da API ---
@@ -58,8 +68,18 @@ func main() {
 	// Eles são protegidos pelo middleware de autenticação
 	mux.Handle("/admin/keys", app.masterKeyAuthMiddleware(http.HandlerFunc(app.createKeyHandler)))
 
+	// Injeção de falha (demo): protegido pela MASTER_KEY, igual ao /admin/keys
+	mux.Handle("/admin/chaos", app.masterKeyAuthMiddleware(http.HandlerFunc(app.chaosHandler)))
+
 	log.Printf("Serviço de Autenticação (Go) rodando na porta %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           instrumentHandler(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	err = srv.ListenAndServe()
+	_ = shutdownTelemetry(context.Background())
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -77,5 +97,5 @@ func connectDB(databaseURL string) (*sql.DB, error) {
 
 	log.Println("Conectado ao PostgreSQL com sucesso!")
 	return db, nil
-}// Pipeline CI/CD - Tech Challenge Fase 3
+} // Pipeline CI/CD - Tech Challenge Fase 3
 // teste gitops sync seg 14 set 2026 21:06:23 -03

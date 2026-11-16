@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -29,6 +31,13 @@ func (a *App) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // validateKeyHandler verifica se uma chave de API (enviada via Header) é válida
 func (a *App) validateKeyHandler(w http.ResponseWriter, r *http.Request) {
+	// Falha injetada (demo da Fase 4): simula um bug que só um restart resolve
+	if a.chaos.Load() {
+		log.Printf("CHAOS: falha injetada ativa, respondendo 500 em /validate")
+		http.Error(w, "falha interna injetada (chaos)", http.StatusInternalServerError)
+		return
+	}
+
 	// Extrai a chave do header "Authorization: Bearer <key>"
 	authHeader := r.Header.Get("Authorization")
 	keyString := strings.TrimPrefix(authHeader, "Bearer ")
@@ -43,7 +52,13 @@ func (a *App) validateKeyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Verifica se o hash existe no banco de dados
 	var id int
-	err := a.DB.QueryRow("SELECT id FROM api_keys WHERE key_hash = $1 AND is_active = true", keyHash).Scan(&id)
+	dbCtx, dbSpan := startClientSpan(r.Context(), "postgres SELECT api_keys", "auth-db")
+	err := a.DB.QueryRowContext(dbCtx, "SELECT id FROM api_keys WHERE key_hash = $1 AND is_active = true", keyHash).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		endSpan(dbSpan, nil) // chave inexistente não é falha do banco
+	} else {
+		endSpan(dbSpan, err)
+	}
 	if err != nil {
 		// Se não encontrar (sql.ErrNoRows), ou qualquer outro erro, a chave é inválida
 		log.Printf("Falha na validação da chave (hash: %s...): %v", keyHash[:6], err)
@@ -123,4 +138,25 @@ func (a *App) masterKeyAuthMiddleware(next http.Handler) http.Handler {
 		// Se a chave for válida, continua para o handler principal
 		next.ServeHTTP(w, r)
 	})
+}
+
+// chaosHandler liga/desliga a falha injetada: POST /admin/chaos {"enabled": true}
+func (a *App) chaosHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Método não permitido", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Corpo da requisição inválido", http.StatusBadRequest)
+		return
+	}
+	a.chaos.Store(req.Enabled)
+	log.Printf("CHAOS: falha injetada enabled=%t", req.Enabled)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]bool{"chaos": req.Enabled}); err != nil {
+		log.Printf("Erro ao codificar resposta do chaos: %v", err)
+	}
 }

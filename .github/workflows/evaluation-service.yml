@@ -26,8 +26,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
-          cache-dependency-path: ${{ env.SERVICE_DIR }}/go.sum
+          go-version: '1.25'
+
+      - name: Resolver dependencias (go mod tidy)
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: go mod tidy
 
       - name: Build
         working-directory: ${{ env.SERVICE_DIR }}
@@ -47,7 +50,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
+
+      - name: Resolver dependencias (go mod tidy)
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: go mod tidy
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
@@ -66,7 +73,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
+
+      - name: Resolver dependencias (go mod tidy)
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: go mod tidy
 
       - name: SAST - gosec (busca vulnerabilidades no código Go)
         uses: securego/gosec@master
